@@ -1,0 +1,138 @@
+# Rendered from a chart scaffolded with helm create, then given a second
+# component (a mail sink for test environments). The scaffold's
+# selectorLabels helper (name + instance) is reused for both, so the main
+# Service, PodDisruptionBudget and Deployment selector also match the mail
+# sink's pods.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-api
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/instance: demo
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/instance: demo
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-api-mailsink
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/instance: demo
+    app.kubernetes.io/component: mailsink
+spec:
+  ports:
+    - name: smtp
+      port: 1025
+      targetPort: smtp
+  selector:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/instance: demo
+    app.kubernetes.io/component: mailsink
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: demo-api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+      app.kubernetes.io/instance: demo
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: demo-api-mailsink
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: mailsink
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-api
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/instance: demo
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+      app.kubernetes.io/instance: demo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api
+        app.kubernetes.io/instance: demo
+        app.kubernetes.io/component: server
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/example/api:1.4.0
+          ports:
+            - name: http
+              containerPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-api-mailsink
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/instance: demo
+    app.kubernetes.io/component: mailsink
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+      app.kubernetes.io/instance: demo
+      app.kubernetes.io/component: mailsink
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api
+        app.kubernetes.io/instance: demo
+        app.kubernetes.io/component: mailsink
+    spec:
+      containers:
+        - name: mailpit
+          image: axllent/mailpit:v1.20
+          ports:
+            - name: smtp
+              containerPort: 1025
+            - name: http
+              containerPort: 8025
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: demo-api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: demo-api
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

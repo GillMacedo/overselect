@@ -1,0 +1,28 @@
+[
+  {
+    "skills": ["checking-selector-overlap"],
+    "query": "About half of the requests to our api Service return 502 since we added a mailpit Deployment to the chart. Why?",
+    "expected_behavior": [
+      "Renders the chart with helm template and runs run.sh on the output",
+      "Explains OS101 with the Service, its selector and the mailpit Deployment whose pods it matches",
+      "Proposes adding a label only the api pods carry, such as app.kubernetes.io/component, to the Service selector, without editing files unasked"
+    ]
+  },
+  {
+    "skills": ["checking-selector-overlap"],
+    "query": "kubectl drain keeps failing with 'This pod has more than one PodDisruptionBudget'. Which budgets are these?",
+    "expected_behavior": [
+      "Runs run.sh on the manifests that define the budgets and the workload",
+      "Names both PodDisruptionBudgets from OS201 and their selectors",
+      "Suggests keeping one budget or narrowing a selector"
+    ]
+  },
+  {
+    "skills": ["checking-selector-overlap"],
+    "query": "overselect exited 3 on our rendered chart. Are our selectors fine?",
+    "expected_behavior": [
+      "Says exit 3 means there is no result, so it can't say the selectors are fine",
+      "Reads the error and fixes the input, such as re-running helm template that failed or passing the missing files"
+    ]
+  }
+]

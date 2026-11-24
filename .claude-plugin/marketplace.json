@@ -1,0 +1,14 @@
+{
+  "name": "overselect-marketplace",
+  "description": "Marketplace for overselect, which finds Kubernetes selectors that match the pods of more than one workload.",
+  "owner": {
+    "name": "Giulliano Macedo"
+  },
+  "plugins": [
+    {
+      "name": "overselect",
+      "source": "./plugin",
+      "description": "Find Kubernetes Services, PodDisruptionBudgets and workload selectors that match the pods of more than one workload, from rendered manifests or Helm output."
+    }
+  ]
+}

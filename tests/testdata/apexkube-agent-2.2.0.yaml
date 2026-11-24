@@ -1,0 +1,203 @@
+---
+# Source: apexkube-agent/templates/metrics-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: apexkube-agent-metrics
+  namespace: "default"
+  labels:
+    helm.sh/chart: apexkube-agent-2.2.0
+    app.kubernetes.io/name: apexkube-agent
+    app.kubernetes.io/instance: apexkube-agent
+    app.kubernetes.io/version: "1.0.1"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: metrics
+spec:
+  type: ClusterIP
+  ports:
+    # Remote-write, not scrape: writers post to /api/v1/receive and envoy
+    # preserves the path.
+    - name: remote-write
+      port: 10000
+      protocol: TCP
+      targetPort: http
+  selector:
+    app.kubernetes.io/name: apexkube-agent
+    app.kubernetes.io/instance: apexkube-agent
+    app.kubernetes.io/component: metrics
+---
+# Source: apexkube-agent/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apexkube-agent
+  namespace: "default"
+  labels:
+    helm.sh/chart: apexkube-agent-2.2.0
+    app.kubernetes.io/name: apexkube-agent
+    app.kubernetes.io/instance: apexkube-agent
+    app.kubernetes.io/version: "1.0.1"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: apexkube-agent
+      app.kubernetes.io/instance: apexkube-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: apexkube-agent
+        app.kubernetes.io/instance: apexkube-agent
+      annotations:
+        checksum/envoy-config: d00116d02d0c340ac805170b2fef40cbc4be4a2627073ae08787864ea5258b55
+        checksum/wireguard-config: 1da5d1b37160c6e7f430e858773f1bb8b5e507353c69ef9dbbfd95e3016f1921
+        checksum/wireguard-privatekey: 12c4aa7daba9c3af68c1a81a55f9ee2b84a4f300494f57a98b3ca5f0f414fc67
+        checksum/tls-secret: 0c49ea71fa53e11a55684a413a688e6450091f34989029ccdee66dc674f3fbf7
+    spec:
+      serviceAccountName: apexkube-agent
+      containers:
+        # Single container: WireGuard tunnel is brought up by the entrypoint,
+        # which then execs Envoy as PID 1.
+        - name: agent
+          image: "improwised/apexkube-agent:1.0.1"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: https
+              containerPort: 10000
+              protocol: TCP
+          securityContext:
+            capabilities:
+              add:
+              - NET_ADMIN
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          startupProbe:
+            tcpSocket:
+              port: https
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 48
+          livenessProbe:
+            tcpSocket:
+              port: https
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          volumeMounts:
+            - name: envoy-config-volume
+              mountPath: /etc/envoy/envoy.yaml
+              subPath: envoy.yaml
+            - name: tls-secret-volume
+              mountPath: /etc/ssl/certs
+              readOnly: true
+            - name: wireguard-config-volume
+              mountPath: /etc/wireguard/wg0.conf
+              subPath: wg0.conf
+            - name: wireguard-privatekey-volume
+              mountPath: /etc/wireguard/privatekey
+              subPath: privatekey
+      volumes:
+        - name: envoy-config-volume
+          configMap:
+            name: apexkube-agent-envoy-config
+        - name: wireguard-config-volume
+          configMap:
+            name: apexkube-agent-wireguard-config
+        - name: wireguard-privatekey-volume
+          secret:
+            secretName: apexkube-agent-wireguard-privatekey
+        - name: tls-secret-volume
+          secret:
+            secretName: apexkube-agent-tls
+---
+# Source: apexkube-agent/templates/metrics-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apexkube-agent-metrics
+  namespace: "default"
+  labels:
+    helm.sh/chart: apexkube-agent-2.2.0
+    app.kubernetes.io/name: apexkube-agent
+    app.kubernetes.io/instance: apexkube-agent
+    app.kubernetes.io/version: "1.0.1"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: metrics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: apexkube-agent
+      app.kubernetes.io/instance: apexkube-agent
+      app.kubernetes.io/component: metrics
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: apexkube-agent
+        app.kubernetes.io/instance: apexkube-agent
+        app.kubernetes.io/component: metrics
+      annotations:
+        checksum/envoy-config: c1617a205b9f113f6ae6670f5e1df6b337c17c4aa4d0558aef671fe03c72625b
+        checksum/wireguard-config: af608e8c3143f44baf273a7d6061bc69250500c0755dbb76574bf1411a820e7b
+        checksum/wireguard-privatekey: ccf6894cb9c579c049362f8d3a1f18e4c741b16f0ad627e4f37894e70b9a068f
+    spec:
+      serviceAccountName: apexkube-agent-metrics
+      # The metrics agent never calls the Kubernetes API, so it carries no token.
+      automountServiceAccountToken: false
+      containers:
+        # Same image as the access agent: the entrypoint brings up WireGuard and
+        # then execs Envoy with the plain-HTTP metrics config.
+        - name: agent
+          image: "improwised/apexkube-agent:1.0.1"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 10000
+              protocol: TCP
+          securityContext:
+            capabilities:
+              add:
+              - NET_ADMIN
+          resources:
+            limits:
+              cpu: 500m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 48
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          volumeMounts:
+            - name: envoy-config-volume
+              mountPath: /etc/envoy/envoy.yaml
+              subPath: envoy.yaml
+            - name: wireguard-config-volume
+              mountPath: /etc/wireguard/wg0.conf
+              subPath: wg0.conf
+            - name: wireguard-privatekey-volume
+              mountPath: /etc/wireguard/privatekey
+              subPath: privatekey
+      volumes:
+        - name: envoy-config-volume
+          configMap:
+            name: apexkube-agent-metrics-envoy-config
+        - name: wireguard-config-volume
+          configMap:
+            name: apexkube-agent-metrics-wireguard-config
+        - name: wireguard-privatekey-volume
+          secret:
+            secretName: apexkube-agent-metrics-wireguard-privatekey
